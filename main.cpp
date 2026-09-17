@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QTextStream>
 #include <QDebug>
+#include <QFile>
 
 int main(int argc, char *argv[])
 {
@@ -18,6 +19,23 @@ int main(int argc, char *argv[])
     // Structured debug logging
     qDebug() << "Application name:" << QCoreApplication::applicationName();
     qDebug() << "Application path:" << QCoreApplication::applicationDirPath();
+
+    QFile file("/etc/asterisk/pjsip.conf");
+    if(file.open(QIODeviceBase::ReadWrite | QIODeviceBase::Text))
+    {
+        QTextStream iostream(&file);
+        QString content = iostream.readAll();
+        content.prepend("Ali\n");
+        content.append("\nAli");
+        file.seek(0);
+        iostream << content;
+        iostream.flush();
+        file.close();
+    }
+    else
+    {
+        cout << "failed open /etc/asterisk/pjsip.conf";
+    }
 
     // Return directly for a simple run-and-exit CLI tool:
     return 0;
