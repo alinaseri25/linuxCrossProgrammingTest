@@ -6,15 +6,15 @@
 #include <QObject>
 #include <QString>
 #include <QList>
-#include <QMap>
+#include <QPair>
 #include <optional>
 
 struct PjSipExtension
 {
     QString number;
     QString password;
-    QString callerId; // Optional: e.g. "\"Extension 101\" <101>"
-    QString username; // Optional: defaults to number if empty
+    QString callerId;
+    QString username;
 };
 
 class PjSipConfigManager : public QObject
@@ -35,10 +35,21 @@ public:
     bool editExtension(const PjSipExtension &extension);
     bool removeExtension(const QString &number);
 
-    // Query methods
+    // Queries for extensions
     bool containsExtension(const QString &number) const;
     std::optional<PjSipExtension> getExtension(const QString &number) const;
     QList<PjSipExtension> extensionList() const;
+
+    // Generic Section / Key-Value Editing (Global, Transport, Templates, etc.)
+    bool setConfigValue(const QString &sectionName, const QString &key, const QString &value, const QString &templateName = QString());
+    QString getConfigValue(const QString &sectionName, const QString &key, const QString &templateName = QString(), const QString &defaultValue = QString()) const;
+    bool removeConfigKey(const QString &sectionName, const QString &key, const QString &templateName = QString());
+
+    // Helper utilities for base settings
+    bool setGlobalSetting(const QString &key, const QString &value);
+    bool setTransportUdpSetting(const QString &key, const QString &value);
+    bool setTemplateSetting(const QString &templateName, const QString &key, const QString &value);
+
     QString lastError() const;
 
 signals:
@@ -47,6 +58,7 @@ signals:
     void extensionAdded(const QString &number);
     void extensionModified(const QString &number);
     void extensionRemoved(const QString &number);
+    void configChanged(const QString &sectionName, const QString &key, const QString &value);
     void errorOccurred(const QString &error);
 
 private:
@@ -66,7 +78,7 @@ private:
     void parseContent(const QString &content);
     QString serializeContent() const;
     int findSectionIndex(const QString &name, const QString &templateName) const;
+    void updateSectionRawLines(Section &sec);
 };
-
 
 #endif // PJSIPCONFIGMANAGER_H

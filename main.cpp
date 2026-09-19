@@ -25,17 +25,15 @@ static void displayAllExtensions(QTextStream &out, const PjSipConfigManager &man
         out << " (No extensions configured)\n";
     } else {
         for (const auto &ext : list) {
-            // اصلاح شده: استفاده از %1, %2, %3 و زنجیره کردن arg
             out << QString("%1 | %2 | %3\n")
-                       .arg(ext.number, -10)
-                       .arg(ext.callerId, -25)
-                       .arg(ext.password, -20);
+            .arg(ext.number, -10)
+                .arg(ext.callerId, -25)
+                .arg(ext.password, -20);
         }
     }
     out << "----------------------------------------------------------------------\n";
     out.flush();
 }
-
 
 // Handler: Add new extension
 static bool handleAddExtension(QTextStream &in, QTextStream &out, PjSipConfigManager &manager)
@@ -150,6 +148,44 @@ static bool handleRemoveExtension(QTextStream &in, QTextStream &out, PjSipConfig
     return false;
 }
 
+// Handler: Edit System/Global Configuration
+static void handleSystemConfig(QTextStream &in, QTextStream &out, PjSipConfigManager &manager)
+{
+    out << "\n--- [System Configuration] ---\n";
+    out << "1) Edit Global Settings\n";
+    out << "2) Edit Transport Settings\n";
+    out << "3) Edit Endpoint Template\n";
+    out << "0) Back\n";
+    out << "Select: ";
+    out.flush();
+
+    QString choice = readInputLine(in);
+    if (choice == "0") return;
+
+    out << "Enter key: ";
+    out.flush();
+    QString key = readInputLine(in);
+    if (key.isEmpty()) {
+        out << "[Error] Key cannot be empty.\n";
+        return;
+    }
+
+    out << "Enter value: ";
+    out.flush();
+    QString value = readInputLine(in);
+
+    bool success = false;
+    if (choice == "1") success = manager.setGlobalSetting(key, value);
+    else if (choice == "2") success = manager.setTransportUdpSetting(key, value);
+    else if (choice == "3") success = manager.setTemplateSetting("endpoint-template", key, value);
+
+    if (success) {
+        out << "[Success] Configuration updated.\n";
+    } else {
+        out << "[Error] Failed to update configuration.\n";
+    }
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -157,7 +193,6 @@ int main(int argc, char *argv[])
     QTextStream cinStream(stdin);
     QTextStream coutStream(stdout);
 
-    // Default configuration path
     QString configPath = "/etc/asterisk/pjsip.conf";
     if (argc > 1) {
         configPath = QString::fromLocal8Bit(argv[1]);
@@ -171,7 +206,6 @@ int main(int argc, char *argv[])
     coutStream << "Target Config File: " << configPath << "\n";
     coutStream.flush();
 
-    // Load initial configuration
     if (!sipManager.load()) {
         coutStream << "[Fatal Error] " << sipManager.lastError() << "\n";
         coutStream << "Hint: Ensure read permissions or run with sudo.\n";
@@ -197,9 +231,10 @@ int main(int argc, char *argv[])
         coutStream << "5) Reload from file (Discard changes)\n";
         coutStream << "6) Save changes to file\n";
         coutStream << "7) Save & Exit\n";
+        coutStream << "8) Edit System/Global Config\n";
         coutStream << "0) Exit without saving\n";
         coutStream << "-----------------------------------------\n";
-        coutStream << "Select an option [0-7]: ";
+        coutStream << "Select an option [0-8]: ";
         coutStream.flush();
 
         QString choice = readInputLine(cinStream);
@@ -258,6 +293,10 @@ int main(int argc, char *argv[])
                 running = false;
             }
         }
+        else if (choice == "8") {
+            handleSystemConfig(cinStream, coutStream, sipManager);
+            hasUnsavedChanges = true;
+        }
         else if (choice == "0") {
             if (hasUnsavedChanges) {
                 coutStream << "You have unsaved changes! Really exit without saving? (y/N): ";
@@ -270,7 +309,7 @@ int main(int argc, char *argv[])
             }
         }
         else {
-            coutStream << "[Invalid choice] Please enter a number between 0 and 7.\n";
+            coutStream << "[Invalid choice] Please enter a number between 0 and 8.\n";
         }
     }
 

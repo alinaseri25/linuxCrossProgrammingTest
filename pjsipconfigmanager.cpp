@@ -2,7 +2,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QRegularExpression>
-#include <QDebug>
+#include <QSet>
 
 PjSipConfigManager::PjSipConfigManager(QObject *parent)
     : QObject(parent)
@@ -48,7 +48,6 @@ void PjSipConfigManager::parseContent(const QString &content)
     m_sections.clear();
     const QStringList lines = content.split('\n');
 
-    // Matches: [section_name] or [section_name](template_name)
     static const QRegularExpression headerRegex(R"(^\[([^\]\(\)]+)\](?:\(([^)]+)\))?)");
     static const QRegularExpression kvRegex(R"(^\s*([^=;#]+)\s*=\s*(.*?)\s*$)");
 
@@ -80,11 +79,26 @@ void PjSipConfigManager::parseContent(const QString &content)
                 currentSection.keyValuePairs.append(
                     qMakePair(kvMatch.captured(1).trimmed(), kvMatch.captured(2).trimmed()));
             }
+        } else {
+            // Lines before the first section (if any)
+            if (!currentSection.rawLines.isEmpty() || !trimmedLine.isEmpty()) {
+                currentSection.rawLines.append(rawLine);
+            }
         }
     }
 
-    if (hasActiveSection) {
+    if (hasActiveSection || !currentSection.rawLines.isEmpty()) {
         m_sections.append(currentSection);
+    }
+}
+
+void PjSipConfigManager::updateSectionRawLines(Section &sec)
+{
+    // Re-generate rawLines from header + keyValuePairs
+    sec.rawLines.clear();
+    sec.rawLines.append(sec.rawHeader);
+    for (const auto &pair : sec.keyValuePairs) {
+        sec.rawLines.append(QString("%1 = %2").arg(pair.first, pair.second));
     }
 }
 
@@ -93,8 +107,26 @@ QString PjSipConfigManager::serializeContent() const
     QString output;
     QTextStream out(&output);
 
+    QSet<QString> processedExtensions;
+
     for (int i = 0; i < m_sections.size(); ++i) {
         const auto &sec = m_sections.at(i);
+
+        // Check if this section belongs to an extension (endpoint, auth, aor)
+        bool isExtensionSection = (sec.templateName == "endpoint-template" ||
+                                   sec.templateName == "auth-template" ||
+                                   sec.templateName == "aor-template");
+
+        if (isExtensionSection) {
+            // Write separator comment once before the first section of this extension
+            if (!processedExtensions.contains(sec.name)) {
+                out << "\n; ==============================\n";
+                out << QString("; Extension %1\n").arg(sec.name);
+                out << "; ==============================\n";
+                processedExtensions.insert(sec.name);
+            }
+        }
+
         for (const auto &line : sec.rawLines) {
             out << line << "\n";
         }
@@ -180,31 +212,26 @@ bool PjSipConfigManager::addExtension(const PjSipExtension &extension)
     endpointSec.name = extension.number;
     endpointSec.templateName = "endpoint-template";
     endpointSec.rawHeader = QString("[%1](endpoint-template)").arg(extension.number);
-    endpointSec.rawLines.append(QString("\n[%1](endpoint-template)").arg(extension.number));
-    endpointSec.rawLines.append(QString("auth = %1").arg(extension.number));
-    endpointSec.rawLines.append(QString("aors = %1").arg(extension.number));
-    endpointSec.rawLines.append(QString("callerid = %1").arg(callerId));
     endpointSec.keyValuePairs.append(qMakePair(QString("auth"), extension.number));
     endpointSec.keyValuePairs.append(qMakePair(QString("aors"), extension.number));
     endpointSec.keyValuePairs.append(qMakePair(QString("callerid"), callerId));
+    updateSectionRawLines(endpointSec);
 
     // 2. Auth Section
     Section authSec;
     authSec.name = extension.number;
     authSec.templateName = "auth-template";
     authSec.rawHeader = QString("[%1](auth-template)").arg(extension.number);
-    authSec.rawLines.append(QString("\n[%1](auth-template)").arg(extension.number));
-    authSec.rawLines.append(QString("username = %1").arg(username));
-    authSec.rawLines.append(QString("password = %1").arg(extension.password));
     authSec.keyValuePairs.append(qMakePair(QString("username"), username));
     authSec.keyValuePairs.append(qMakePair(QString("password"), extension.password));
+    updateSectionRawLines(authSec);
 
     // 3. AOR Section
     Section aorSec;
     aorSec.name = extension.number;
     aorSec.templateName = "aor-template";
     aorSec.rawHeader = QString("[%1](aor-template)").arg(extension.number);
-    aorSec.rawLines.append(QString("\n[%1](aor-template)").arg(extension.number));
+    updateSectionRawLines(aorSec);
 
     m_sections.append(endpointSec);
     m_sections.append(authSec);
@@ -222,7 +249,6 @@ bool PjSipConfigManager::editExtension(const PjSipExtension &extension)
         return false;
     }
 
-    // Remove existing sections and re-add with new properties
     removeExtension(extension.number);
     bool status = addExtension(extension);
 
@@ -298,6 +324,95 @@ QList<PjSipExtension> PjSipConfigManager::extensionList() const
         }
     }
     return list;
+}
+
+// ----------------------------------------------------
+// Base Configuration & Template Modification Methods
+// ----------------------------------------------------
+
+bool PjSipConfigManager::setConfigValue(const QString &sectionName, const QString &key, const QString &value, const QString &templateName)
+{
+    int idx = findSectionIndex(sectionName, templateName);
+    if (idx == -1) {
+        // Create the section if it does not exist
+        Section newSec;
+        newSec.name = sectionName;
+        newSec.templateName = templateName;
+        if (templateName.isEmpty()) {
+            newSec.rawHeader = QString("[%1]").arg(sectionName);
+        } else {
+            newSec.rawHeader = QString("[%1](%2)").arg(sectionName, templateName);
+        }
+        newSec.keyValuePairs.append(qMakePair(key, value));
+        updateSectionRawLines(newSec);
+        m_sections.append(newSec);
+    } else {
+        Section &sec = m_sections[idx];
+        bool foundKey = false;
+        for (auto &pair : sec.keyValuePairs) {
+            if (pair.first.compare(key, Qt::CaseInsensitive) == 0) {
+                pair.second = value;
+                foundKey = true;
+                break;
+            }
+        }
+        if (!foundKey) {
+            sec.keyValuePairs.append(qMakePair(key, value));
+        }
+        updateSectionRawLines(sec);
+    }
+
+    emit configChanged(sectionName, key, value);
+    return true;
+}
+
+QString PjSipConfigManager::getConfigValue(const QString &sectionName, const QString &key, const QString &templateName, const QString &defaultValue) const
+{
+    int idx = findSectionIndex(sectionName, templateName);
+    if (idx == -1) {
+        return defaultValue;
+    }
+
+    for (const auto &pair : m_sections.at(idx).keyValuePairs) {
+        if (pair.first.compare(key, Qt::CaseInsensitive) == 0) {
+            return pair.second;
+        }
+    }
+    return defaultValue;
+}
+
+bool PjSipConfigManager::removeConfigKey(const QString &sectionName, const QString &key, const QString &templateName)
+{
+    int idx = findSectionIndex(sectionName, templateName);
+    if (idx == -1) {
+        return false;
+    }
+
+    Section &sec = m_sections[idx];
+    for (int i = 0; i < sec.keyValuePairs.size(); ++i) {
+        if (sec.keyValuePairs.at(i).first.compare(key, Qt::CaseInsensitive) == 0) {
+            sec.keyValuePairs.removeAt(i);
+            updateSectionRawLines(sec);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PjSipConfigManager::setGlobalSetting(const QString &key, const QString &value)
+{
+    return setConfigValue("global", key, value, "");
+}
+
+bool PjSipConfigManager::setTransportUdpSetting(const QString &key, const QString &value)
+{
+    return setConfigValue("transport-udp", key, value, "");
+}
+
+bool PjSipConfigManager::setTemplateSetting(const QString &templateName, const QString &key, const QString &value)
+{
+    // Asterisk template definitions use (!) format, e.g. [endpoint-template](!)
+    return setConfigValue(templateName, key, value, "!");
 }
 
 QString PjSipConfigManager::lastError() const
