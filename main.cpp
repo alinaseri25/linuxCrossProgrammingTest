@@ -15,20 +15,27 @@ static void displayAllExtensions(QTextStream &out, const PjSipConfigManager &man
     const auto list = manager.extensionList();
 
     out << "\n----------------------------------------------------------------------\n";
-    out << QString("%-10s | %-25s | %-20s\n").arg("Number", "Caller ID", "Password");
+    out << QString("%1 | %2 | %3\n")
+               .arg("Number", -10)
+               .arg("Caller ID", -25)
+               .arg("Password", -20);
     out << "----------------------------------------------------------------------\n";
 
     if (list.isEmpty()) {
         out << " (No extensions configured)\n";
     } else {
         for (const auto &ext : list) {
-            out << QString("%-10s | %-25s | %-20s\n")
-            .arg(ext.number, ext.callerId, ext.password);
+            // اصلاح شده: استفاده از %1, %2, %3 و زنجیره کردن arg
+            out << QString("%1 | %2 | %3\n")
+                       .arg(ext.number, -10)
+                       .arg(ext.callerId, -25)
+                       .arg(ext.password, -20);
         }
     }
     out << "----------------------------------------------------------------------\n";
     out.flush();
 }
+
 
 // Handler: Add new extension
 static bool handleAddExtension(QTextStream &in, QTextStream &out, PjSipConfigManager &manager)
