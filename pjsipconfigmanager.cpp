@@ -112,22 +112,27 @@ QString PjSipConfigManager::serializeContent() const
     for (int i = 0; i < m_sections.size(); ++i) {
         const auto &sec = m_sections.at(i);
 
-        // Check if this section belongs to an extension (endpoint, auth, aor)
-        bool isExtensionSection = (sec.templateName == "endpoint-template" ||
-                                   sec.templateName == "auth-template" ||
-                                   sec.templateName == "aor-template");
+        // Check if this section is an extension endpoint
+        bool isEndpoint = (sec.templateName == "endpoint-template");
 
-        if (isExtensionSection) {
-            // Write separator comment once before the first section of this extension
-            if (!processedExtensions.contains(sec.name)) {
-                out << "\n; ==============================\n";
-                out << QString("; Extension %1\n").arg(sec.name);
-                out << "; ==============================\n";
-                processedExtensions.insert(sec.name);
-            }
+        if (isEndpoint && !processedExtensions.contains(sec.name)) {
+            // Write standard clean separator banner
+            out << "\n; ==============================\n";
+            out << QString("; Extension %1\n").arg(sec.name);
+            out << "; ==============================\n";
+            processedExtensions.insert(sec.name);
         }
 
+        // Write section lines, filtering out any stray old banner comments
         for (const auto &line : sec.rawLines) {
+            QString trimmed = line.trimmed();
+
+            // Skip old leftover banners so they don't duplicate
+            if (trimmed.startsWith("; ==============================") ||
+                trimmed.startsWith("; Extension ")) {
+                continue;
+            }
+
             out << line << "\n";
         }
     }
