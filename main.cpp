@@ -1,7 +1,7 @@
 #include <QCoreApplication>
 #include <QTextStream>
 #include <QString>
-#include "pjsipconfigmanager.h"
+#include "../../QtLibraries/pjsipConfigManager/pjsipconfigmanager.h"
 
 // Helper to read trimmed line from stdin
 static QString readInputLine(QTextStream &in)

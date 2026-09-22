@@ -14,8 +14,8 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
 
 add_executable(linuxCrossProgrammingTest
   main.cpp
-  pjsipconfigmanager.h
-  pjsipconfigmanager.cpp
+  ../../QtLibraries/pjsipConfigManager/pjsipconfigmanager.h
+  ../../QtLibraries/pjsipConfigManager/pjsipconfigmanager.cpp
 )
 target_link_libraries(linuxCrossProgrammingTest PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
